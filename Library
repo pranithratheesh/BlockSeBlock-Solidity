@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: GPL-3.0
+pragma solidity ^0.8.2;
+
+contract Library {
+    address public librarian;
+
+    uint256 public constant BORROW_FEE = 0.001 ether;
+    uint256 public constant PENALTY_PER_DAY = 0.0001 ether;
+    uint256 public constant BORROW_DURATION = 1 days;
+
+    struct BorrowInfo {
+        uint256 borrowTime;
+        bool borrowed;
+    }
+
+    mapping(address => BorrowInfo) public borrowers;
+
+    event BookBorrowed(address indexed user, uint256 time);
+    event BookReturned(address indexed user, uint256 penalty);
+
+    modifier onlyLibrarian() {
+        require(msg.sender == librarian, "Only librarian");
+        _;
+    }
+
+    constructor() {
+        librarian = msg.sender;
+    }
+
+    // User borrows a book by paying fixed fee
+    function borrowBook() external payable {
+        require(!borrowers[msg.sender].borrowed, "Already borrowed");
+        require(msg.value == BORROW_FEE, "Incorrect borrow fee");
+
+        borrowers[msg.sender] = BorrowInfo(block.timestamp, true);
+        emit BookBorrowed(msg.sender, block.timestamp);
+    }
+
+    // User returns the book and pays penalty if delayed
+    function returnBook() external payable {
+        BorrowInfo memory info = borrowers[msg.sender];
+        require(info.borrowed, "No book borrowed");
+
+        uint256 dueTime = info.borrowTime + BORROW_DURATION;
+        uint256 penalty = 0;
+
+      if (block.timestamp > dueTime) {
+            uint256 lateDays =
+                (block.timestamp - dueTime) / 1 days + 1;
+            penalty = lateDays * PENALTY_PER_DAY;
+        }
+
+        require(msg.value == penalty, "Incorrect penalty amount");
+
+        borrowers[msg.sender].borrowed = false;
+        emit BookReturned(msg.sender, penalty);
+    }
+
+    // Librarian withdraws all collected fees
+   function withdraw() external onlyLibrarian {
+    (bool success, ) = payable(librarian).call{value: address(this).balance}("");
+    require(success, "Transfer failed");
+}
+
+    function getBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+}
